@@ -1,0 +1,2 @@
+"requested_draws","accepted_draws","attempts","rejected_unstable","rejected_near_zero_proxy_moment","rejected_other","stability_enforced","seed"
+1000,1000,1003,3,0,0,TRUE,123
