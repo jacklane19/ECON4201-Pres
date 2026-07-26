@@ -720,3 +720,279 @@ function [figure_handle, layout_handle, axes_handles] = plot_tagged_irfs( ...
 
     linkaxes(axes_handles, 'x');
 end
+
+
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Assumption tests
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% For Lag lengths
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% VAR lag-length selection
+%
+% Criteria:
+%   1. Likelihood-ratio tests
+%   2. Akaike Information Criterion (AIC)
+%   3. Hannan-Quinn Criterion (HQC)
+%   4. Schwarz Information Criterion (SIC/BIC)
+
+%% Construct dataset
+
+Y = [
+    industrial_production_log, ...
+    producer_price_log, ...
+    monetary_shock
+    ];
+
+%% Settings
+
+maximum_lag = 60;
+alpha = 0.05;
+
+%% Check data
+
+if any(~isfinite(Y), 'all')
+    error(['Y contains NaN or Inf values. Handle the missing ' ...
+           'observations before selecting the VAR lag length.']);
+end
+
+[number_of_observations, number_of_variables] = size(Y);
+
+% All models should be estimated using the same sample.
+%
+% The first maximum_lag observations are used as presample
+% observations. Every candidate model is then estimated using
+% the remaining observations.
+
+Y_presample = Y(1:maximum_lag, :);
+Y_estimation = Y(maximum_lag + 1:end, :);
+
+effective_sample_size = size(Y_estimation, 1);
+
+% Check whether the largest VAR is estimable.
+% Each equation has:
+%   1 intercept + number_of_variables * maximum_lag regressors
+
+maximum_number_of_regressors = ...
+    1 + number_of_variables * maximum_lag;
+
+if effective_sample_size <= maximum_number_of_regressors
+    error(['The maximum lag is too large relative to the sample size. ' ...
+           'Reduce maximum_lag.']);
+end
+
+%% Preallocate storage
+
+lag_orders = (1:maximum_lag)';
+
+log_likelihood = NaN(maximum_lag, 1);
+number_of_parameters = NaN(maximum_lag, 1);
+
+estimated_models = cell(maximum_lag, 1);
+
+%% Estimate each candidate VAR
+
+for lag = 1:maximum_lag
+
+    % Create unrestricted VAR(lag) model
+    model = varm(number_of_variables, lag);
+
+    % Estimate using the common estimation sample
+    [estimated_models{lag}, ~, log_likelihood(lag)] = ...
+        estimate( ...
+        model, ...
+        Y_estimation, ...
+        'Y0', Y_presample, ...
+        'Display', 'off');
+
+    % Obtain number of estimated coefficients
+    model_summary = summarize(estimated_models{lag});
+
+    number_of_parameters(lag) = ...
+        model_summary.NumEstimatedParameters;
+
+end
+
+%% Calculate AIC, HQC and SIC/BIC
+
+[AIC, SIC, information_criteria] = aicbic( ...
+    log_likelihood, ...
+    number_of_parameters, ...
+    effective_sample_size);
+
+% HQC is contained in the third output from aicbic
+HQC = information_criteria.hqc;
+
+% Ensure column vectors
+AIC = AIC(:);
+HQC = HQC(:);
+SIC = SIC(:);
+
+%% Construct information-criteria table
+
+information_criteria_table = table( ...
+    lag_orders, ...
+    log_likelihood, ...
+    number_of_parameters, ...
+    AIC, ...
+    HQC, ...
+    SIC, ...
+    'VariableNames', { ...
+    'Lag', ...
+    'LogLikelihood', ...
+    'NumberOfParameters', ...
+    'AIC', ...
+    'HQC', ...
+    'SIC_BIC' ...
+    });
+
+disp('Information criteria results:')
+disp(information_criteria_table)
+
+%% Find preferred lag for each information criterion
+
+[~, AIC_selected_lag] = min(AIC);
+[~, HQC_selected_lag] = min(HQC);
+[~, SIC_selected_lag] = min(SIC);
+
+fprintf('\nInformation-criteria lag selection:\n');
+fprintf('AIC selects lag: %d\n', AIC_selected_lag);
+fprintf('HQC selects lag: %d\n', HQC_selected_lag);
+fprintf('SIC/BIC selects lag: %d\n', SIC_selected_lag);
+
+%% Likelihood-ratio tests
+%
+% For each lag p:
+%
+% Restricted model:   VAR(p - 1)
+% Unrestricted model: VAR(p)
+%
+% H0: All coefficients at lag p are jointly zero.
+% H1: At least one coefficient at lag p is nonzero.
+
+restricted_lag = (1:maximum_lag - 1)';
+unrestricted_lag = (2:maximum_lag)';
+
+LR_statistic = NaN(maximum_lag - 1, 1);
+LR_degrees_of_freedom = NaN(maximum_lag - 1, 1);
+LR_p_value = NaN(maximum_lag - 1, 1);
+LR_critical_value = NaN(maximum_lag - 1, 1);
+LR_reject_restricted_model = false(maximum_lag - 1, 1);
+
+for lag = 2:maximum_lag
+
+    current_test = lag - 1;
+
+    % VAR(lag) is unrestricted
+    unrestricted_log_likelihood = log_likelihood(lag);
+
+    % VAR(lag - 1) is restricted
+    restricted_log_likelihood = log_likelihood(lag - 1);
+
+    % Number of restrictions
+    degrees_of_freedom = ...
+        number_of_parameters(lag) ...
+        - number_of_parameters(lag - 1);
+
+    [reject_null, p_value, statistic, critical_value] = ...
+        lratiotest( ...
+        unrestricted_log_likelihood, ...
+        restricted_log_likelihood, ...
+        degrees_of_freedom, ...
+        alpha);
+
+    LR_statistic(current_test) = statistic;
+    LR_degrees_of_freedom(current_test) = degrees_of_freedom;
+    LR_p_value(current_test) = p_value;
+    LR_critical_value(current_test) = critical_value;
+    LR_reject_restricted_model(current_test) = reject_null;
+
+end
+
+%% Construct LR-test table
+
+LR_test_table = table( ...
+    restricted_lag, ...
+    unrestricted_lag, ...
+    LR_statistic, ...
+    LR_degrees_of_freedom, ...
+    LR_p_value, ...
+    LR_critical_value, ...
+    LR_reject_restricted_model, ...
+    'VariableNames', { ...
+    'RestrictedLag', ...
+    'UnrestrictedLag', ...
+    'LRStatistic', ...
+    'DegreesOfFreedom', ...
+    'PValue', ...
+    'CriticalValue', ...
+    'RejectRestrictedModel' ...
+    });
+
+disp(' ')
+disp('Sequential likelihood-ratio tests:')
+disp(LR_test_table)
+
+%% Select lag using sequential LR tests
+%
+% Begin with maximum_lag and test downward.
+%
+% If VAR(p - 1) is not rejected, reduce the lag to p - 1.
+% If VAR(p - 1) is rejected, retain VAR(p) and stop.
+
+LR_selected_lag = maximum_lag;
+
+for lag = maximum_lag:-1:2
+
+    current_test = lag - 1;
+
+    if LR_reject_restricted_model(current_test)
+
+        % VAR(lag - 1) is rejected in favour of VAR(lag)
+        LR_selected_lag = lag;
+        break
+
+    else
+
+        % VAR(lag - 1) is not rejected
+        LR_selected_lag = lag - 1;
+
+    end
+
+end
+
+fprintf('\nSequential LR testing selects lag: %d\n', ...
+    LR_selected_lag);
+
+
+
+
+
+
+
+
+%Residuals of the VAR
+
+
+
+
+%Stationarity of the variables
+
+
+
+
+
+%Structural Breaks
+
+
+
+
