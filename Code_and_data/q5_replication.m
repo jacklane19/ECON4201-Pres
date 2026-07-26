@@ -33,6 +33,8 @@ fed_funds = data_table.FF;
 
 
 
+ 
+
 %% Cholesky Decomposition
 
 
@@ -58,11 +60,32 @@ irfs1 = squeeze(VAR1.ir_ols(:, :, 3, :));
 
 opt1_plot.varnames     = {'industrial_production_log','producer_price_log', 'monetary_shock'};
 opt1_plot.shocksnames  = {'monetary_shock'};
-opt1_plot.nplots = [1, 2];
+opt1_plot.nplots = [1, 3];
 
 plot_irfs_(irfs1, opt1_plot);
 
+%Will need to rescale so the IRFs are in 1% innovations rather than
+%standard deviations
 
+Sigma_u = VAR1.Sigma_ols;
+P = chol(Sigma_u, 'lower');
+%Extract the value associated with monetary policy shock on monetary policy
+mp_shock_sd_impact_on_mp_shock = P(3,3)
+
+%Desired_policy_impact
+desired_policy_impact = 1;
+
+% Common scaling factor
+scaling_factor = desired_policy_impact / mp_shock_sd_impact_on_mp_shock;
+
+% Rescale every variable and every horizon
+monetary_irf_rescaled = irfs1 * scaling_factor;
+
+opt1_plot.varnames     = {'industrial_production_log','producer_price_log', 'monetary_shock'};
+opt1_plot.shocksnames  = {'monetary_shock'};
+opt1_plot.nplots = [1, 3];
+
+plot_irfs_(monetary_irf_rescaled, opt1_plot);
 
 
 %%
