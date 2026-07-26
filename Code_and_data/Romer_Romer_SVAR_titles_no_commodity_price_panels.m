@@ -184,7 +184,7 @@ y_axis_ticks_mpshock = {
     };
 
 figure_title_mpshock = ...
-    'New Monetary Policy Shock VAR';
+    'Romer-Romer Monetary Policy Shock VAR';
 
 [figure_mpshock, plot_layout_mpshock, axes_mpshock] = ...
     plot_tagged_irfs( ...
@@ -306,18 +306,17 @@ horizons_mpshock_com = ...
 
 %% Plot the _mpshock_com impulse responses
 
-panel_indices_mpshock_com = [4, 1, 2, 3];
+% Commodity prices remain in the estimated VAR but their IRF is not plotted.
+panel_indices_mpshock_com = [4, 1, 2];
 
 panel_titles_mpshock_com = {
     'Effect on the Cumulated Shock'
     'Effect on Output'
     'Effect on the Price Level'
-    'Effect on Commodity Prices'
     };
 
 y_axis_labels_mpshock_com = {
     'Percentage Points'
-    'Percent'
     'Percent'
     'Percent'
     };
@@ -326,18 +325,16 @@ y_axis_limits_mpshock_com = {
     [0, 1.2]
     [-5, 2]
     [-7, 1]
-    []
     };
 
 y_axis_ticks_mpshock_com = {
     0:0.2:1.2
     -5:1:2
     -7:1:1
-    []
     };
 
 figure_title_mpshock_com = ...
-    'New Monetary Policy Shock VAR with Commodity Prices';
+    'Romer-Romer Monetary Policy Shock VAR with Commodity Prices';
 
 [figure_mpshock_com, plot_layout_mpshock_com, axes_mpshock_com] = ...
     plot_tagged_irfs( ...
@@ -348,7 +345,7 @@ figure_title_mpshock_com = ...
     y_axis_labels_mpshock_com, ...
     y_axis_limits_mpshock_com, ...
     y_axis_ticks_mpshock_com, ...
-    [900, 50, 800, 1250], ...
+    [900, 50, 800, 1050], ...
     figure_title_mpshock_com);
 
 
@@ -603,18 +600,17 @@ horizons_ff_com = ...
 
 %% Plot the _ff_com impulse responses
 
-panel_indices_ff_com = [4, 1, 2, 3];
+% Commodity prices remain in the estimated VAR but their IRF is not plotted.
+panel_indices_ff_com = [4, 1, 2];
 
 panel_titles_ff_com = {
     'Effect on the Federal Funds Rate'
     'Effect on Output'
     'Effect on the Price Level'
-    'Effect on Commodity Prices'
     };
 
 y_axis_labels_ff_com = {
     'Percentage Points'
-    'Percent'
     'Percent'
     'Percent'
     };
@@ -623,14 +619,12 @@ y_axis_limits_ff_com = {
     [0, 1.2]
     [-5, 2]
     [-7, 1]
-    []
     };
 
 y_axis_ticks_ff_com = {
     0:0.2:1.2
     -5:1:2
     -7:1:1
-    []
     };
 
 figure_title_ff_com = ...
@@ -645,7 +639,7 @@ figure_title_ff_com = ...
     y_axis_labels_ff_com, ...
     y_axis_limits_ff_com, ...
     y_axis_ticks_ff_com, ...
-    [900, 100, 800, 1250], ...
+    [900, 100, 800, 1050], ...
     figure_title_ff_com);
 
 
