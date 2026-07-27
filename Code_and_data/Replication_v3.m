@@ -55,7 +55,7 @@ y1 = [
 
 %% Estimate the Cholesky SVAR
 
-lags = 36;
+lags = 12;
 
 opt1.hor = 48;
 opt1.K   = 0;
