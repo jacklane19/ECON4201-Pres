@@ -9,11 +9,15 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 % The OLS IRF is the point estimate. Each draw is normalised so the policy
 % variable moves by options.desired_policy_impact on impact. The standard
 % deviation across draws is the pointwise simulated standard error.
+% Variables excluded through options.response_indices remain in the VAR but
+% their impulse responses are not returned or stored.
 %
 % Optional fields:
 %   desired_policy_impact   Default: 1
 %   draw_covariance_matrix  Default: true
 %   confidence_level        Default: 0.95
+%   response_indices        Default: 1:number_of_variables
+%                           Only these response variables are returned.
 %
 % Requires Statistics and Machine Learning Toolbox for MVNRND and WISHRND.
 
@@ -60,6 +64,29 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     if policy_index > number_of_variables
         error('policy_index exceeds the number of variables in Y.');
     end
+
+    if ~isfield(options, 'response_indices') || ...
+            isempty(options.response_indices)
+        options.response_indices = 1:number_of_variables;
+    end
+
+    validateattributes(options.response_indices, {'numeric'}, ...
+        {'vector', 'integer', 'positive', '<=', number_of_variables});
+
+    response_indices = options.response_indices(:)';
+
+    if numel(unique(response_indices)) ~= numel(response_indices)
+        error('options.response_indices must not contain duplicates.');
+    end
+
+    policy_response_position = find(response_indices == policy_index, 1);
+
+    if isempty(policy_response_position)
+        error(['options.response_indices must include policy_index so ', ...
+            'that the policy IRF can be normalised on impact.']);
+    end
+
+    number_of_response_variables = numel(response_indices);
 
     finite_rows = all(isfinite(Y), 2);
     first_valid_row = find(finite_rows, 1, 'first');
@@ -121,13 +148,12 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 
     %% OLS IRF and impact normalisation
 
-    irf_ols_all_shocks = compute_cholesky_irfs( ...
+    irf_ols = compute_selected_policy_irf( ...
         coefficient_matrix_ols, innovation_covariance_ols, ...
-        lags, maximum_horizon);
+        lags, maximum_horizon, policy_index, response_indices);
 
-    irf_ols = squeeze(irf_ols_all_shocks(:, :, policy_index));
-
-    policy_impact_before_normalisation = irf_ols(policy_index, 1);
+    policy_impact_before_normalisation = ...
+        irf_ols(policy_response_position, 1);
 
     if abs(policy_impact_before_normalisation) < 1e-12
         error(['The OLS impact response of the policy variable is ', ...
@@ -146,7 +172,8 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
         coefficient_covariance_asymptotic, ...
         number_of_draws);
 
-    irf_draws = NaN(number_of_variables, maximum_horizon + 1, number_of_draws);
+    irf_draws = NaN( ...
+        number_of_response_variables, maximum_horizon + 1, number_of_draws);
     accepted_draws = 0;
 
     for current_draw = 1:number_of_draws
@@ -167,12 +194,11 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
             innovation_covariance_draw = innovation_covariance_ols;
         end
 
-        irf_draw_all_shocks = compute_cholesky_irfs( ...
+        irf_draw = compute_selected_policy_irf( ...
             coefficient_matrix_draw, innovation_covariance_draw, ...
-            lags, maximum_horizon);
+            lags, maximum_horizon, policy_index, response_indices);
 
-        irf_draw = squeeze(irf_draw_all_shocks(:, :, policy_index));
-        policy_impact_draw = irf_draw(policy_index, 1);
+        policy_impact_draw = irf_draw(policy_response_position, 1);
 
         if ~isfinite(policy_impact_draw) || ...
                 abs(policy_impact_draw) < 1e-12 || ...
@@ -228,6 +254,9 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     results.Y_dependent = Y_dependent;
     results.X = X;
     results.number_of_variables = number_of_variables;
+    results.response_indices = response_indices;
+    results.number_of_response_variables = number_of_response_variables;
+    results.policy_response_position = policy_response_position;
     results.lags = lags;
     results.maximum_horizon = maximum_horizon;
     results.horizons = 0:maximum_horizon;
@@ -262,9 +291,14 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 end
 
 
-function irfs = compute_cholesky_irfs( ...
-        coefficient_matrix, innovation_covariance, lags, maximum_horizon)
-% Output dimensions: response variable x horizon x structural shock.
+function irfs = compute_selected_policy_irf( ...
+        coefficient_matrix, innovation_covariance, lags, maximum_horizon, ...
+        policy_index, response_indices)
+%COMPUTE_SELECTED_POLICY_IRF Compute one shock's selected VAR responses.
+%
+% The full VAR dynamics are retained, including variables omitted from
+% response_indices. Only the selected response rows are returned and stored.
+% Output dimensions: selected response variable x horizon.
 
     number_of_variables = size(innovation_covariance, 1);
     autoregressive_matrices = NaN( ...
@@ -278,6 +312,7 @@ function irfs = compute_cholesky_irfs( ...
     end
 
     impact_matrix = chol(innovation_covariance, 'lower');
+    policy_impact_vector = impact_matrix(:, policy_index);
 
     moving_average_matrices = zeros( ...
         number_of_variables, number_of_variables, maximum_horizon + 1);
@@ -293,12 +328,13 @@ function irfs = compute_cholesky_irfs( ...
         moving_average_matrices(:, :, horizon + 1) = current_matrix;
     end
 
-    irfs = zeros(number_of_variables, maximum_horizon + 1, number_of_variables);
+    irfs = zeros(numel(response_indices), maximum_horizon + 1);
 
     for horizon = 0:maximum_horizon
-        current_irf = moving_average_matrices(:, :, horizon + 1) * impact_matrix;
-        irfs(:, horizon + 1, :) = reshape( ...
-            current_irf, number_of_variables, 1, number_of_variables);
+        full_response = ...
+            moving_average_matrices(:, :, horizon + 1) * ...
+            policy_impact_vector;
+        irfs(:, horizon + 1) = full_response(response_indices);
     end
 
 end
