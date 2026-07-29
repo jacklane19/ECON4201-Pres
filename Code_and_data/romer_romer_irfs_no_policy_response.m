@@ -79,9 +79,9 @@ y_newm = [ ...
 lags_newm = 36;
 policy_variable_index_newm = 3;
 
-% Return output, the price level and the policy variable.
+% Return only output and the price level.
 asymptotic_options_newm = asymptotic_options;
-asymptotic_options_newm.response_indices = [1, 2, 3];
+asymptotic_options_newm.response_indices = [1, 2];
 
 VAR_newm = var_irf_asymptotic_mvnrnd( ...
     y_newm, lags_newm, maximum_irf_horizon, ...
@@ -98,7 +98,7 @@ irfs_upper_1se_newm = VAR_newm.irf_upper_1se;
 irfs_lower_95_newm = VAR_newm.irf_lower_normal;
 irfs_upper_95_newm = VAR_newm.irf_upper_normal;
 
-plot_scale_newm = [100; 100; 1];
+plot_scale_newm = [100; 100];
 
 irfs_for_plot_newm = irfs_newm .* plot_scale_newm;
 irfs_pointwise_std_plot_newm = ...
@@ -110,7 +110,7 @@ irfs_upper_95_plot_newm = irfs_upper_95_newm .* plot_scale_newm;
 
 pointwise_std_table_newm = array2table( ...
     [horizons_newm', irfs_pointwise_std_plot_newm'], ...
-    'VariableNames', {'Horizon', 'Output', 'PriceLevel', 'NewMeasure'});
+    'VariableNames', {'Horizon', 'Output', 'PriceLevel'});
 
 fprintf('\n_newm original policy impact response: %.6f\n', ...
     VAR_newm.policy_impact_before_normalisation);
@@ -120,14 +120,13 @@ fprintf('_newm retained parameter draws: %d of %d\n', ...
     VAR_newm.accepted_number_of_draws, ...
     VAR_newm.requested_number_of_draws);
 
-panel_indices_newm = [3, 1, 2];
+panel_indices_newm = [1, 2];
 panel_titles_newm = { ...
-    'IRF of Cumulated Shock'; ...
     'IRF of Output'; ...
-    'IRF Price Level'};
-y_axis_labels_newm = {'Percentage Points'; 'Percent'; 'Percent'};
-y_axis_limits_newm = {[0, 1.2]; [-5, 2]; [-7, 1]};
-y_axis_ticks_newm = {0:0.2:1.2; -5:1:2; -7:1:1};
+    'IRF of Price Level'};
+y_axis_labels_newm = {'Percent'; 'Percent'};
+y_axis_limits_newm = {[-5, 2]; [-7, 1]};
+y_axis_ticks_newm = {-5:1:2; -7:1:1};
 
 % Whole-figure title: edit this text to change the chart title.
 figure_title_newm = ...
@@ -167,10 +166,10 @@ y_newm_com = [ ...
 lags_newm_com = 36;
 policy_variable_index_newm_com = 4;
 
-% Commodity prices remain in the VAR as variable 3, but no commodity-price
-% response is returned. The returned rows are output, prices and policy.
+% Commodity prices remain in the VAR as variable 3, but only output and
+% price-level responses are returned.
 asymptotic_options_newm_com = asymptotic_options;
-asymptotic_options_newm_com.response_indices = [1, 2, 4];
+asymptotic_options_newm_com.response_indices = [1, 2];
 
 VAR_newm_com = var_irf_asymptotic_mvnrnd( ...
     y_newm_com, lags_newm_com, maximum_irf_horizon, ...
@@ -178,7 +177,7 @@ VAR_newm_com = var_irf_asymptotic_mvnrnd( ...
     asymptotic_options_newm_com);
 
 horizons_newm_com = VAR_newm_com.horizons;
-% Rows below are output, price level and new measure; no commodity IRF.
+% Rows below are output and price level only.
 irfs_newm_com = VAR_newm_com.irf_ols;
 irf_draws_newm_com = VAR_newm_com.irf_draws;
 irfs_mean_draws_newm_com = VAR_newm_com.irf_mean_across_draws;
@@ -188,7 +187,7 @@ irfs_upper_1se_newm_com = VAR_newm_com.irf_upper_1se;
 irfs_lower_95_newm_com = VAR_newm_com.irf_lower_normal;
 irfs_upper_95_newm_com = VAR_newm_com.irf_upper_normal;
 
-plot_scale_newm_com = [100; 100; 1];
+plot_scale_newm_com = [100; 100];
 
 irfs_for_plot_newm_com = irfs_newm_com .* plot_scale_newm_com;
 irfs_pointwise_std_plot_newm_com = ...
@@ -204,7 +203,7 @@ irfs_upper_95_plot_newm_com = ...
 
 pointwise_std_table_newm_com = array2table( ...
     [horizons_newm_com', irfs_pointwise_std_plot_newm_com'], ...
-    'VariableNames', {'Horizon', 'Output', 'PriceLevel', 'NewMeasure'});
+    'VariableNames', {'Horizon', 'Output', 'PriceLevel'});
 
 fprintf('\n_newm_com original policy impact response: %.6f\n', ...
     VAR_newm_com.policy_impact_before_normalisation);
@@ -214,15 +213,14 @@ fprintf('_newm_com retained parameter draws: %d of %d\n', ...
     VAR_newm_com.accepted_number_of_draws, ...
     VAR_newm_com.requested_number_of_draws);
 
-% Returned response rows: 1 = output, 2 = price level, 3 = policy.
-panel_indices_newm_com = [3, 1, 2];
+% Returned response rows: 1 = output, 2 = price level.
+panel_indices_newm_com = [1, 2];
 panel_titles_newm_com = { ...
-    'IRF of Cumulated Shock'; ...
     'IRF of Output'; ...
     'IRF of Price Level'};
-y_axis_labels_newm_com = {'Percentage Points'; 'Percent'; 'Percent'};
-y_axis_limits_newm_com = {[0, 1.2]; [-5, 2]; [-7, 1]};
-y_axis_ticks_newm_com = {0:0.2:1.2; -5:1:2; -7:1:1};
+y_axis_labels_newm_com = {'Percent'; 'Percent'};
+y_axis_limits_newm_com = {[-5, 2]; [-7, 1]};
+y_axis_ticks_newm_com = {-5:1:2; -7:1:1};
 
 % Whole-figure title: edit this text to change the chart title.
 figure_title_newm_com = ...
@@ -260,9 +258,9 @@ y_ff = [ ...
 lags_ff = 36;
 policy_variable_index_ff = 3;
 
-% Return output, the price level and the policy variable.
+% Return only output and the price level.
 asymptotic_options_ff = asymptotic_options;
-asymptotic_options_ff.response_indices = [1, 2, 3];
+asymptotic_options_ff.response_indices = [1, 2];
 
 VAR_ff = var_irf_asymptotic_mvnrnd( ...
     y_ff, lags_ff, maximum_irf_horizon, ...
@@ -279,7 +277,7 @@ irfs_upper_1se_ff = VAR_ff.irf_upper_1se;
 irfs_lower_95_ff = VAR_ff.irf_lower_normal;
 irfs_upper_95_ff = VAR_ff.irf_upper_normal;
 
-plot_scale_ff = [100; 100; 1];
+plot_scale_ff = [100; 100];
 
 irfs_for_plot_ff = irfs_ff .* plot_scale_ff;
 irfs_pointwise_std_plot_ff = irfs_pointwise_std_ff .* plot_scale_ff;
@@ -290,8 +288,7 @@ irfs_upper_95_plot_ff = irfs_upper_95_ff .* plot_scale_ff;
 
 pointwise_std_table_ff = array2table( ...
     [horizons_ff', irfs_pointwise_std_plot_ff'], ...
-    'VariableNames', {'Horizon', 'Output', 'PriceLevel', ...
-    'FederalFundsRate'});
+    'VariableNames', {'Horizon', 'Output', 'PriceLevel'});
 
 fprintf('\n_ff original policy impact response: %.6f\n', ...
     VAR_ff.policy_impact_before_normalisation);
@@ -300,14 +297,13 @@ fprintf('_ff OLS normalisation factor: %.6f\n', ...
 fprintf('_ff retained parameter draws: %d of %d\n', ...
     VAR_ff.accepted_number_of_draws, VAR_ff.requested_number_of_draws);
 
-panel_indices_ff = [3, 1, 2];
+panel_indices_ff = [1, 2];
 panel_titles_ff = { ...
-    'IRF of Federal Funds Rate'; ...
     'IRF of Output'; ...
     'IRF of Price Level'};
-y_axis_labels_ff = {'Percentage Points'; 'Percent'; 'Percent'};
-y_axis_limits_ff = {[0, 1.2]; [-5, 2]; [-7, 1]};
-y_axis_ticks_ff = {0:0.2:1.2; -5:1:2; -7:1:1};
+y_axis_labels_ff = {'Percent'; 'Percent'};
+y_axis_limits_ff = {[-5, 2]; [-7, 1]};
+y_axis_ticks_ff = {-5:1:2; -7:1:1};
 
 % Whole-figure title: edit this text to change the chart title.
 figure_title_ff = ...
@@ -347,10 +343,10 @@ y_ff_com = [ ...
 lags_ff_com = 36;
 policy_variable_index_ff_com = 4;
 
-% Commodity prices remain in the VAR as variable 3, but no commodity-price
-% response is returned. The returned rows are output, prices and policy.
+% Commodity prices remain in the VAR as variable 3, but only output and
+% price-level responses are returned.
 asymptotic_options_ff_com = asymptotic_options;
-asymptotic_options_ff_com.response_indices = [1, 2, 4];
+asymptotic_options_ff_com.response_indices = [1, 2];
 
 VAR_ff_com = var_irf_asymptotic_mvnrnd( ...
     y_ff_com, lags_ff_com, maximum_irf_horizon, ...
@@ -358,7 +354,7 @@ VAR_ff_com = var_irf_asymptotic_mvnrnd( ...
     asymptotic_options_ff_com);
 
 horizons_ff_com = VAR_ff_com.horizons;
-% Rows below are output, price level and federal funds rate; no commodity IRF.
+% Rows below are output and price level only.
 irfs_ff_com = VAR_ff_com.irf_ols;
 irf_draws_ff_com = VAR_ff_com.irf_draws;
 irfs_mean_draws_ff_com = VAR_ff_com.irf_mean_across_draws;
@@ -368,7 +364,7 @@ irfs_upper_1se_ff_com = VAR_ff_com.irf_upper_1se;
 irfs_lower_95_ff_com = VAR_ff_com.irf_lower_normal;
 irfs_upper_95_ff_com = VAR_ff_com.irf_upper_normal;
 
-plot_scale_ff_com = [100; 100; 1];
+plot_scale_ff_com = [100; 100];
 
 irfs_for_plot_ff_com = irfs_ff_com .* plot_scale_ff_com;
 irfs_pointwise_std_plot_ff_com = ...
@@ -384,8 +380,7 @@ irfs_upper_95_plot_ff_com = ...
 
 pointwise_std_table_ff_com = array2table( ...
     [horizons_ff_com', irfs_pointwise_std_plot_ff_com'], ...
-    'VariableNames', {'Horizon', 'Output', 'PriceLevel', ...
-    'FederalFundsRate'});
+    'VariableNames', {'Horizon', 'Output', 'PriceLevel'});
 
 fprintf('\n_ff_com original policy impact response: %.6f\n', ...
     VAR_ff_com.policy_impact_before_normalisation);
@@ -395,15 +390,14 @@ fprintf('_ff_com retained parameter draws: %d of %d\n', ...
     VAR_ff_com.accepted_number_of_draws, ...
     VAR_ff_com.requested_number_of_draws);
 
-% Returned response rows: 1 = output, 2 = price level, 3 = policy.
-panel_indices_ff_com = [3, 1, 2];
+% Returned response rows: 1 = output, 2 = price level.
+panel_indices_ff_com = [1, 2];
 panel_titles_ff_com = { ...
-    'IRF of Federal Funds Rate'; ...
     'IRF of Output'; ...
     'IRF of Price Level'};
-y_axis_labels_ff_com = {'Percentage Points'; 'Percent'; 'Percent'};
-y_axis_limits_ff_com = {[0, 1.2]; [-5, 2]; [-7, 1]};
-y_axis_ticks_ff_com = {0:0.2:1.2; -5:1:2; -7:1:1};
+y_axis_labels_ff_com = {'Percent'; 'Percent'};
+y_axis_limits_ff_com = {[-5, 2]; [-7, 1]};
+y_axis_ticks_ff_com = {-5:1:2; -7:1:1};
 
 % Whole-figure title: edit this text to change the chart title.
 figure_title_ff_com = ...

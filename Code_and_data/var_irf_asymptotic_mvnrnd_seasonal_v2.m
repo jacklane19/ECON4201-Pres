@@ -1,4 +1,5 @@
-function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_index, number_of_draws, options)
+function results = var_irf_asymptotic_mvnrnd_seasonal_v2( ...
+        Y, lags, maximum_horizon, policy_index, number_of_draws, options)
 %VAR_IRF_ASYMPTOTIC_MVNRND Frequentist Monte Carlo bands for a Cholesky VAR.
 %
 % Estimates a reduced-form VAR by OLS, identifies shocks recursively, and
@@ -10,18 +11,22 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 % variable moves by options.desired_policy_impact on impact. The standard
 % deviation across draws is the pointwise simulated standard error.
 %
+% Deterministic regressors, including seasonal dummies, are included in
+% every VAR equation but are excluded from the dynamic IRF recursion.
+%
 % Optional fields:
-%   desired_policy_impact   Default: 1
-%   draw_covariance_matrix  Default: true
-%   confidence_level        Default: 0.95
-%   response_indices        Default: all response variables
+%   desired_policy_impact      Default: 1
+%   draw_covariance_matrix     Default: true
+%   confidence_level           Default: 0.95
+%   deterministic_regressors  Default: no additional regressors
+%   deterministic_names       Default: generated variable names
+%   response_indices          Default: all response variables
 %
-% response_indices controls which response rows are returned after the
-% policy-shock IRFs have been computed and normalised. The policy variable
-% can therefore be omitted from the returned results without affecting the
-% impact normalisation.
+% The deterministic_regressors matrix must have the same number of rows as
+% Y before leading or trailing incomplete observations are removed.
 %
-% Requires Statistics and Machine Learning Toolbox for MVNRND and WISHRND.
+% Requires Statistics and Machine Learning Toolbox for MVNRND, WISHRND,
+% and NORMINV.
 
     if nargin < 6 || isempty(options)
         options = struct();
@@ -39,8 +44,19 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
         options.confidence_level = 0.95;
     end
 
-    if ~isfield(options, 'response_indices')
-        options.response_indices = [];
+    if ~isfield(options, 'deterministic_regressors') || ...
+            isempty(options.deterministic_regressors)
+        options.deterministic_regressors = zeros(size(Y, 1), 0);
+    end
+
+    if ~isfield(options, 'deterministic_names')
+        options.deterministic_names = strings( ...
+            1, size(options.deterministic_regressors, 2));
+    end
+
+    if ~isfield(options, 'response_indices') || ...
+            isempty(options.response_indices)
+        options.response_indices = 1:size(Y, 2);
     end
 
     validateattributes(Y, {'double'}, {'2d', 'nonempty'});
@@ -58,11 +74,16 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
         {'logical', 'numeric'}, {'scalar'});
     validateattributes(options.confidence_level, {'numeric'}, ...
         {'scalar', '>', 0, '<', 1});
+    validateattributes(options.deterministic_regressors, {'numeric'}, ...
+        {'2d'});
+    validateattributes(options.response_indices, {'numeric'}, ...
+        {'vector', 'integer', 'positive'});
 
     options.draw_covariance_matrix = ...
         logical(options.draw_covariance_matrix);
+    options.response_indices = options.response_indices(:)';
 
-    %% Validate and trim data
+    %% Validate and align data
 
     original_number_of_observations = size(Y, 1);
     number_of_variables = size(Y, 2);
@@ -71,16 +92,39 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
         error('policy_index exceeds the number of variables in Y.');
     end
 
-    if isempty(options.response_indices)
-        response_indices = 1:number_of_variables;
-    else
-        response_indices = options.response_indices(:)';
-        validateattributes(response_indices, {'numeric'}, ...
-            {'vector', 'integer', 'positive', '<=', number_of_variables});
+    if any(options.response_indices > number_of_variables) || ...
+            numel(unique(options.response_indices)) ~= ...
+            numel(options.response_indices)
+        error(['response_indices must contain unique valid indices ', ...
+            'for variables in Y.']);
+    end
 
-        if numel(unique(response_indices)) ~= numel(response_indices)
-            error('options.response_indices must not contain duplicates.');
-        end
+    deterministic_regressors = options.deterministic_regressors;
+
+    if size(deterministic_regressors, 1) ~= ...
+            original_number_of_observations
+        error(['deterministic_regressors must have the same number ', ...
+            'of rows as Y.']);
+    end
+
+    if any(~isfinite(deterministic_regressors), 'all')
+        error('deterministic_regressors contains NaN or Inf values.');
+    end
+
+    number_of_deterministic_regressors = ...
+        size(deterministic_regressors, 2);
+
+    deterministic_names = string(options.deterministic_names);
+    deterministic_names = deterministic_names(:)';
+
+    if isempty(deterministic_names) && ...
+            number_of_deterministic_regressors > 0
+        deterministic_names = "Deterministic" + ...
+            string(1:number_of_deterministic_regressors);
+    elseif numel(deterministic_names) ~= ...
+            number_of_deterministic_regressors
+        error(['deterministic_names must have one entry for each ', ...
+            'column of deterministic_regressors.']);
     end
 
     finite_rows = all(isfinite(Y), 2);
@@ -92,6 +136,8 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     end
 
     Y = Y(first_valid_row:last_valid_row, :);
+    deterministic_regressors = deterministic_regressors( ...
+        first_valid_row:last_valid_row, :);
 
     if any(~isfinite(Y), 'all')
         error(['Y contains an internal NaN or Inf observation. ', ...
@@ -100,7 +146,8 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 
     number_of_observations = size(Y, 1);
     effective_sample_size = number_of_observations - lags;
-    number_of_regressors = 1 + number_of_variables * lags;
+    number_of_regressors = 1 + ...
+        number_of_deterministic_regressors + number_of_variables * lags;
 
     if effective_sample_size <= number_of_regressors
         error(['The effective sample size must exceed the number of ', ...
@@ -110,12 +157,24 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     %% Construct VAR regressors
 
     Y_dependent = Y(lags + 1:end, :);
-    X = ones(effective_sample_size, number_of_regressors);
+    deterministic_estimation_sample = ...
+        deterministic_regressors(lags + 1:end, :);
+
+    X = [ ...
+        ones(effective_sample_size, 1), ...
+        deterministic_estimation_sample, ...
+        zeros(effective_sample_size, number_of_variables * lags)];
+
+    first_lag_column = 2 + number_of_deterministic_regressors;
 
     for current_lag = 1:lags
-        columns = 2 + (current_lag - 1) * number_of_variables : ...
-            1 + current_lag * number_of_variables;
-        X(:, columns) = Y(lags + 1 - current_lag:end - current_lag, :);
+        columns = first_lag_column + ...
+            (current_lag - 1) * number_of_variables : ...
+            first_lag_column - 1 + ...
+            current_lag * number_of_variables;
+
+        X(:, columns) = Y( ...
+            lags + 1 - current_lag:end - current_lag, :);
     end
 
     %% OLS estimates
@@ -145,11 +204,13 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 
     irf_ols_all_shocks = compute_cholesky_irfs( ...
         coefficient_matrix_ols, innovation_covariance_ols, ...
-        lags, maximum_horizon);
+        lags, maximum_horizon, number_of_deterministic_regressors);
 
-    irf_ols = squeeze(irf_ols_all_shocks(:, :, policy_index));
+    irf_ols_full = squeeze( ...
+        irf_ols_all_shocks(:, :, policy_index));
 
-    policy_impact_before_normalisation = irf_ols(policy_index, 1);
+    policy_impact_before_normalisation = ...
+        irf_ols_full(policy_index, 1);
 
     if abs(policy_impact_before_normalisation) < 1e-12
         error(['The OLS impact response of the policy variable is ', ...
@@ -159,7 +220,8 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     normalisation_scaling_factor = options.desired_policy_impact / ...
         policy_impact_before_normalisation;
 
-    irf_ols = irf_ols * normalisation_scaling_factor;
+    irf_ols_full = irf_ols_full * normalisation_scaling_factor;
+    irf_ols = irf_ols_full(options.response_indices, :);
 
     %% Direct asymptotic coefficient draws using MVNRND
 
@@ -168,7 +230,11 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
         coefficient_covariance_asymptotic, ...
         number_of_draws);
 
-    irf_draws = NaN(number_of_variables, maximum_horizon + 1, number_of_draws);
+    number_of_returned_responses = numel(options.response_indices);
+    irf_draws = NaN( ...
+        number_of_returned_responses, ...
+        maximum_horizon + 1, ...
+        number_of_draws);
     accepted_draws = 0;
 
     for current_draw = 1:number_of_draws
@@ -179,38 +245,43 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
 
         if options.draw_covariance_matrix
             % Plug-in sampling draw centred on Sigma_hat:
-            % residual_df * Sigma_hat ~ Wishart(Sigma_u, residual_df).
+            % E[Sigma_draw | Sigma_hat] = Sigma_hat.
             innovation_covariance_draw = wishrnd( ...
-                innovation_covariance_ols / residual_degrees_of_freedom, ...
+                innovation_covariance_ols / ...
+                residual_degrees_of_freedom, ...
                 residual_degrees_of_freedom);
             innovation_covariance_draw = ...
-                make_symmetric_positive_definite(innovation_covariance_draw);
+                make_symmetric_positive_definite( ...
+                innovation_covariance_draw);
         else
             innovation_covariance_draw = innovation_covariance_ols;
         end
 
         irf_draw_all_shocks = compute_cholesky_irfs( ...
             coefficient_matrix_draw, innovation_covariance_draw, ...
-            lags, maximum_horizon);
+            lags, maximum_horizon, ...
+            number_of_deterministic_regressors);
 
-        irf_draw = squeeze(irf_draw_all_shocks(:, :, policy_index));
-        policy_impact_draw = irf_draw(policy_index, 1);
+        irf_draw_full = squeeze( ...
+            irf_draw_all_shocks(:, :, policy_index));
+        policy_impact_draw = irf_draw_full(policy_index, 1);
 
         if ~isfinite(policy_impact_draw) || ...
                 abs(policy_impact_draw) < 1e-12 || ...
-                any(~isfinite(irf_draw), 'all')
+                any(~isfinite(irf_draw_full), 'all')
             continue
         end
 
-        irf_draw = irf_draw * ...
+        irf_draw_full = irf_draw_full * ...
             (options.desired_policy_impact / policy_impact_draw);
 
-        if any(~isfinite(irf_draw), 'all')
+        if any(~isfinite(irf_draw_full), 'all')
             continue
         end
 
         accepted_draws = accepted_draws + 1;
-        irf_draws(:, :, accepted_draws) = irf_draw;
+        irf_draws(:, :, accepted_draws) = ...
+            irf_draw_full(options.response_indices, :);
 
     end
 
@@ -240,35 +311,32 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     irf_upper_normal = irf_ols + ...
         normal_critical_value .* irf_pointwise_std;
 
-    %% Retain only the requested response variables
-
-    irf_ols = irf_ols(response_indices, :);
-    irf_draws = irf_draws(response_indices, :, :);
-    irf_mean_across_draws = irf_mean_across_draws(response_indices, :);
-    irf_pointwise_std = irf_pointwise_std(response_indices, :);
-    irf_lower_1se = irf_lower_1se(response_indices, :);
-    irf_upper_1se = irf_upper_1se(response_indices, :);
-    irf_lower_normal = irf_lower_normal(response_indices, :);
-    irf_upper_normal = irf_upper_normal(response_indices, :);
-
     %% Return results
 
     results = struct();
-    results.original_number_of_observations = original_number_of_observations;
+    results.original_number_of_observations = ...
+        original_number_of_observations;
     results.first_used_row = first_valid_row;
     results.last_used_row = last_valid_row;
     results.Y = Y;
     results.Y_dependent = Y_dependent;
     results.X = X;
+    results.deterministic_regressors = deterministic_regressors;
+    results.deterministic_estimation_sample = ...
+        deterministic_estimation_sample;
+    results.deterministic_names = deterministic_names;
+    results.number_of_deterministic_regressors = ...
+        number_of_deterministic_regressors;
     results.number_of_variables = number_of_variables;
+    results.response_indices = options.response_indices;
     results.lags = lags;
     results.maximum_horizon = maximum_horizon;
     results.horizons = 0:maximum_horizon;
     results.policy_index = policy_index;
-    results.response_indices = response_indices;
     results.effective_sample_size = effective_sample_size;
     results.number_of_regressors = number_of_regressors;
-    results.residual_degrees_of_freedom = residual_degrees_of_freedom;
+    results.residual_degrees_of_freedom = ...
+        residual_degrees_of_freedom;
     results.coefficient_matrix_ols = coefficient_matrix_ols;
     results.residuals = residuals;
     results.innovation_covariance_ols = innovation_covariance_ols;
@@ -278,7 +346,8 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     results.policy_impact_before_normalisation = ...
         policy_impact_before_normalisation;
     results.desired_policy_impact = options.desired_policy_impact;
-    results.normalisation_scaling_factor = normalisation_scaling_factor;
+    results.normalisation_scaling_factor = ...
+        normalisation_scaling_factor;
     results.irf_ols = irf_ols;
     results.irf_draws = irf_draws;
     results.irf_mean_across_draws = irf_mean_across_draws;
@@ -291,22 +360,29 @@ function results = var_irf_asymptotic_mvnrnd(Y, lags, maximum_horizon, policy_in
     results.irf_upper_normal = irf_upper_normal;
     results.requested_number_of_draws = number_of_draws;
     results.accepted_number_of_draws = accepted_draws;
-    results.draw_covariance_matrix = options.draw_covariance_matrix;
+    results.draw_covariance_matrix = ...
+        options.draw_covariance_matrix;
 
 end
 
 
 function irfs = compute_cholesky_irfs( ...
-        coefficient_matrix, innovation_covariance, lags, maximum_horizon)
+        coefficient_matrix, innovation_covariance, lags, ...
+        maximum_horizon, number_of_deterministic_regressors)
 % Output dimensions: response variable x horizon x structural shock.
+% Constants and deterministic regressors are excluded from the recursion.
 
     number_of_variables = size(innovation_covariance, 1);
     autoregressive_matrices = NaN( ...
         number_of_variables, number_of_variables, lags);
 
+    first_lag_row = 2 + number_of_deterministic_regressors;
+
     for current_lag = 1:lags
-        rows = 2 + (current_lag - 1) * number_of_variables : ...
-            1 + current_lag * number_of_variables;
+        rows = first_lag_row + ...
+            (current_lag - 1) * number_of_variables : ...
+            first_lag_row - 1 + current_lag * number_of_variables;
+
         autoregressive_matrices(:, :, current_lag) = ...
             coefficient_matrix(rows, :)';
     end
@@ -319,18 +395,23 @@ function irfs = compute_cholesky_irfs( ...
 
     for horizon = 1:maximum_horizon
         current_matrix = zeros(number_of_variables);
+
         for current_lag = 1:min(lags, horizon)
             current_matrix = current_matrix + ...
                 autoregressive_matrices(:, :, current_lag) * ...
-                moving_average_matrices(:, :, horizon - current_lag + 1);
+                moving_average_matrices( ...
+                :, :, horizon - current_lag + 1);
         end
+
         moving_average_matrices(:, :, horizon + 1) = current_matrix;
     end
 
-    irfs = zeros(number_of_variables, maximum_horizon + 1, number_of_variables);
+    irfs = zeros( ...
+        number_of_variables, maximum_horizon + 1, number_of_variables);
 
     for horizon = 0:maximum_horizon
-        current_irf = moving_average_matrices(:, :, horizon + 1) * impact_matrix;
+        current_irf = ...
+            moving_average_matrices(:, :, horizon + 1) * impact_matrix;
         irfs(:, horizon + 1, :) = reshape( ...
             current_irf, number_of_variables, 1, number_of_variables);
     end
@@ -338,7 +419,8 @@ function irfs = compute_cholesky_irfs( ...
 end
 
 
-function output_matrix = make_symmetric_positive_definite(input_matrix)
+function output_matrix = ...
+        make_symmetric_positive_definite(input_matrix)
 
     symmetric_matrix = (input_matrix + input_matrix') / 2;
     [~, flag] = chol(symmetric_matrix);
@@ -357,13 +439,23 @@ function output_matrix = make_symmetric_positive_definite(input_matrix)
 end
 
 
-function output_matrix = make_symmetric_positive_semidefinite(input_matrix)
+function output_matrix = ...
+        make_symmetric_positive_semidefinite(input_matrix)
 
     symmetric_matrix = (input_matrix + input_matrix') / 2;
     [vectors, values] = eig(symmetric_matrix, 'vector');
     scale = max(1, max(abs(values)));
-    values = max(values, 1e-14 * scale);
+    values = max(values, 0);
+
+    % Remove tiny numerical negative eigenvalues and add minimal jitter only
+    % when needed by MVNRND's covariance-factorisation step.
     output_matrix = vectors * diag(values) * vectors';
     output_matrix = (output_matrix + output_matrix') / 2;
+
+    [~, flag] = chol(output_matrix + 1e-14 * scale * eye(size(output_matrix)));
+    if flag ~= 0
+        output_matrix = output_matrix + ...
+            1e-12 * scale * eye(size(output_matrix));
+    end
 
 end

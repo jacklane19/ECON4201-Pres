@@ -65,83 +65,102 @@ opt1.K   = 0;
 
 VAR1 = cvar_(y1, lags, opt1);
 
-%% Extract the IRFs to the monetary policy shock
 
-monetary_shock_index = 3;
 
-% After squeeze, the expected dimensions are:
-% variable x horizon
-irfs1 = squeeze(VAR1.ir_ols(:, :, monetary_shock_index, :));
 
-% Ensure variables are stored in rows
-if size(irfs1, 1) ~= size(y1, 2) && ...
-        size(irfs1, 2) == size(y1, 2)
 
-    irfs1 = irfs1';
 
+
+monetary_shock_RR =  data_table.RESID(lags + 1:end);
+
+
+Monetary_shock_VAR_residuals = VAR1.e_ols(:, 3);
+
+% Remove the first 36 observations from the original series
+% because they are lost when estimating the VAR
+
+correlation = corr(monetary_shock_RR, Monetary_shock_VAR_residuals);
+
+fprintf('Correlation: %.4f\n', correlation);
+
+size(monetary_shock_RR)
+size(Monetary_shock_VAR_residuals)
+
+%% Extract and align the two monetary-policy shock series
+
+% Romer and Romer residual series
+% Remove the first observations lost due to the VAR lags
+monetary_shock_RR = data_table.RESID(lags + 1:end);
+
+% Residuals from the monetary-policy equation of the VAR
+Monetary_shock_VAR_residuals = VAR1.e_ols(:, 3);
+
+% Ensure both series are column vectors
+monetary_shock_RR = monetary_shock_RR(:);
+Monetary_shock_VAR_residuals = Monetary_shock_VAR_residuals(:);
+
+%% Check that the series have equal lengths
+
+fprintf('Romer-Romer shock observations: %d\n', ...
+    length(monetary_shock_RR));
+
+fprintf('VAR residual observations: %d\n', ...
+    length(Monetary_shock_VAR_residuals));
+
+if length(monetary_shock_RR) ~= length(Monetary_shock_VAR_residuals)
+    error(['The series have different lengths: RR = %d, ' ...
+        'VAR residuals = %d.'], ...
+        length(monetary_shock_RR), ...
+        length(Monetary_shock_VAR_residuals));
 end
 
-%% Normalise to a one-percentage-point innovation in SUMSHCK
+%% Calculate the correlation
 
-policy_variable_index = 3;
+correlation = corr( ...
+    monetary_shock_RR, ...
+    Monetary_shock_VAR_residuals, ...
+    'Rows', 'complete');
 
-% The first IRF column is the impact response at horizon zero
-mp_impact_response = irfs1(policy_variable_index, 1);
+fprintf('Correlation: %.4f\n', correlation);
 
-% Check that the impact response is nonzero
-if abs(mp_impact_response) < 1e-12
-    error(['The impact response of the monetary policy variable is ', ...
-        'approximately zero, so the IRFs cannot be normalised.']);
-end
+%% Plot both series on the same chart
 
-% Desired impact response of SUMSHCK
-desired_policy_impact = 1;
+% Map residuals to their observations in the original dataset
+observation_index = ...
+    (lags + 1):(lags + length(monetary_shock_RR));
 
-% Common normalisation factor
-scaling_factor = desired_policy_impact / mp_impact_response;
+figure;
 
-% Apply the same scaling factor to every variable and horizon
-monetary_irf_rescaled = irfs1 * scaling_factor;
+plot(observation_index, monetary_shock_RR, ...
+    'LineWidth', 1.2, ...
+    'DisplayName', 'Romer and Romer shock');
 
-%% Convert logged-variable responses into percentages
+hold on;
 
-monetary_irf_for_plot = monetary_irf_rescaled;
+plot(observation_index, Monetary_shock_VAR_residuals, ...
+    'LineWidth', 1.2, ...
+    'DisplayName', 'VAR monetary-policy residual');
 
-% LNIPNSA and LNPPINSA are natural logarithms.
-% Multiplying their IRFs by 100 converts log-point responses into
-% approximate percentage responses.
-monetary_irf_for_plot(1:2, :) = ...
-    100 * monetary_irf_rescaled(1:2, :);
+yline(0, '--', ...
+    'LineWidth', 1, ...
+    'DisplayName', 'Zero line');
 
-% Do not multiply SUMSHCK by 100 because it is already measured in
-% percentage points.
-monetary_irf_for_plot(3, :) = ...
-    monetary_irf_rescaled(3, :);
+hold off;
 
-%% Verify the normalisation
+title('Comparison of Monetary Policy Shock Series', ...
+    'FontSize', 18);
 
-fprintf('\nOriginal impact response of SUMSHCK: %.6f\n', ...
-    mp_impact_response);
+xlabel('Observation in Original Dataset', ...
+    'FontSize', 16);
 
-fprintf('Scaling factor: %.6f\n', ...
-    scaling_factor);
+ylabel('Monetary Policy Shock', ...
+    'FontSize', 16);
 
-fprintf(['Rescaled impact response of SUMSHCK ', ...
-    '(should equal 1): %.6f\n\n'], ...
-    monetary_irf_for_plot(3, 1));
+legend('Location', 'best');
 
-%% Plot the rescaled IRFs
+set(gca, 'FontSize', 14);
 
-opt1_plot.varnames = {
-    'Industrial production'
-    'Producer price level'
-    'Cumulated monetary shock'
-    };
+grid on;
+box on;
 
-opt1_plot.shocksnames = {
-    'Monetary policy shock'
-    };
 
-opt1_plot.nplots = [1, 3];
-
-plot_irfs_(monetary_irf_for_plot, opt1_plot);
